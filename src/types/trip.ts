@@ -1,9 +1,19 @@
-import type { Trip, Booking, ItineraryItem, Expense } from "@prisma/client"
+import type { Trip, Booking, ItineraryItem, Expense, FlightAlert } from "@prisma/client"
 
 export interface TripWithBookings extends Trip {
   bookings: Booking[]
   expenses: Expense[]
   itineraryItems: ItineraryItem[]
+}
+
+export interface TripWithDetails extends Trip {
+  bookings: (Booking & { flightAlerts: FlightAlert[] })[]
+  expenses: Expense[]
+  itineraryItems: ItineraryItem[]
+  _count?: {
+    bookings: number
+    expenses: number
+  }
 }
 
 export interface TripSummary {
@@ -35,4 +45,45 @@ export interface TripFilters {
   destination?: string
   startDateFrom?: string
   startDateTo?: string
+  search?: string
+}
+
+export interface FlightDetails {
+  flightNumber: string
+  airline: string
+  departureAirport: string
+  arrivalAirport: string
+  departureTime: string
+  arrivalTime: string
+  terminal?: string
+  gate?: string
+  status?: string
+}
+
+export interface HotelDetails {
+  hotelName: string
+  address: string
+  checkIn: string
+  checkOut: string
+  roomType?: string
+  confirmationNumber?: string
+}
+
+export interface CalendarSuggestion {
+  eventId: string
+  eventTitle: string
+  eventDate: string
+  location: string
+  reason: string
+  suggestedAction: string
+}
+
+export interface FlightAlertInfo {
+  id: string
+  type: string
+  bookingId: string
+  flightNumber?: string
+  details: Record<string, unknown>
+  acknowledged: boolean
+  createdAt: Date
 }
