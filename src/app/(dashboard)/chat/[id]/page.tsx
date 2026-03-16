@@ -1,21 +1,41 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { useRouter } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { ChatContainer } from "@/components/chat/ChatContainer"
 import { ChatSidebar, type ConversationItem } from "@/components/chat/ChatSidebar"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet"
-import { PanelLeftOpen } from "lucide-react"
+import { PanelLeftOpen, Loader2 } from "lucide-react"
 
-export default function ChatPage() {
+interface ConversationMessage {
+  id: string
+  role: string
+  content: string
+  toolCalls?: unknown
+  toolResults?: unknown
+  createdAt: string
+}
+
+interface ConversationDetail {
+  id: string
+  title: string | null
+  messages: ConversationMessage[]
+}
+
+export default function ConversationPage() {
+  const params = useParams()
   const router = useRouter()
+  const conversationId = params.id as string
+
   const [conversations, setConversations] = useState<ConversationItem[]>([])
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
+  const [conversationDetail, setConversationDetail] =
+    useState<ConversationDetail | null>(null)
   const [isLoadingConversations, setIsLoadingConversations] = useState(true)
+  const [isLoadingDetail, setIsLoadingDetail] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  // Fetch conversations on mount
+  // Fetch conversation list
   useEffect(() => {
     async function loadConversations() {
       try {
@@ -25,7 +45,7 @@ export default function ChatPage() {
           setConversations(data)
         }
       } catch {
-        // Silently fail — empty list is fine
+        // Silently fail
       } finally {
         setIsLoadingConversations(false)
       }
@@ -33,9 +53,33 @@ export default function ChatPage() {
     loadConversations()
   }, [])
 
+  // Fetch conversation detail
+  useEffect(() => {
+    async function loadConversation() {
+      if (!conversationId) return
+      setIsLoadingDetail(true)
+      try {
+        const response = await fetch(
+          `/api/chat?conversationId=${conversationId}`
+        )
+        if (response.ok) {
+          const data = (await response.json()) as ConversationDetail
+          setConversationDetail(data)
+        } else {
+          // Conversation not found — redirect to main chat
+          router.push("/chat")
+        }
+      } catch {
+        router.push("/chat")
+      } finally {
+        setIsLoadingDetail(false)
+      }
+    }
+    loadConversation()
+  }, [conversationId, router])
+
   const handleSelectConversation = useCallback(
     (id: string) => {
-      setActiveConversationId(id)
       setSidebarOpen(false)
       router.push(`/chat/${id}`)
     },
@@ -43,41 +87,41 @@ export default function ChatPage() {
   )
 
   const handleNewConversation = useCallback(() => {
-    setActiveConversationId(null)
     setSidebarOpen(false)
-  }, [])
+    router.push("/chat")
+  }, [router])
 
   const handleDeleteConversation = useCallback(
     async (id: string) => {
       try {
         await fetch(`/api/chat?conversationId=${id}`, { method: "DELETE" })
         setConversations((prev) => prev.filter((c) => c.id !== id))
-        if (activeConversationId === id) {
-          setActiveConversationId(null)
+        if (id === conversationId) {
+          router.push("/chat")
         }
       } catch {
         // Silently fail
       }
     },
-    [activeConversationId]
+    [conversationId, router]
   )
 
   const handleConversationCreated = useCallback(
     (id: string) => {
-      setActiveConversationId(id)
-      // Refresh conversation list
+      // Refresh list
       fetch("/api/chat")
         .then((res) => res.json())
         .then((data) => setConversations(data as ConversationItem[]))
         .catch(() => {})
+      router.push(`/chat/${id}`)
     },
-    []
+    [router]
   )
 
   const sidebarContent = (
     <ChatSidebar
       conversations={conversations}
-      activeConversationId={activeConversationId}
+      activeConversationId={conversationId}
       isLoadingConversations={isLoadingConversations}
       onSelectConversation={handleSelectConversation}
       onNewConversation={handleNewConversation}
@@ -113,10 +157,17 @@ export default function ChatPage() {
 
       {/* Chat area */}
       <div className="flex-1">
-        <ChatContainer
-          conversationId={activeConversationId}
-          onConversationCreated={handleConversationCreated}
-        />
+        {isLoadingDetail ? (
+          <div className="flex h-full items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <ChatContainer
+            conversationId={conversationId}
+            onConversationCreated={handleConversationCreated}
+            initialMessages={conversationDetail?.messages}
+          />
+        )}
       </div>
     </div>
   )
