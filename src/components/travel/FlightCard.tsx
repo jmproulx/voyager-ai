@@ -13,6 +13,7 @@ import {
   ArrowRight,
   CircleDot,
   Plus,
+  ExternalLink,
 } from "lucide-react"
 
 interface FlightCardProps {
@@ -72,7 +73,11 @@ export function FlightCard({ offer, onAddToTrip }: FlightCardProps) {
               </span>
               <Badge
                 variant={offer.provider === "AMADEUS" ? "secondary" : "outline"}
-                className="ml-auto text-[10px]"
+                className={`ml-auto text-[10px] ${
+                  offer.provider === "KIWI"
+                    ? "border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300"
+                    : ""
+                }`}
               >
                 {offer.provider}
               </Badge>
@@ -169,6 +174,18 @@ export function FlightCard({ offer, onAddToTrip }: FlightCardProps) {
                 <Plus className="mr-1 h-3.5 w-3.5" />
                 Add to trip
               </Button>
+            )}
+
+            {offer.deepLink && (
+              <a
+                href={offer.deepLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-800 dark:text-teal-400 dark:hover:text-teal-200"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Book on Kiwi.com
+              </a>
             )}
           </div>
         </div>

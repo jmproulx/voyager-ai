@@ -13,6 +13,44 @@ interface AirportAutocompleteProps {
   className?: string
 }
 
+/**
+ * Fetch airport suggestions from the Kiwi locations API.
+ * Returns an Airport-shaped array, or null if the API is unavailable.
+ */
+async function fetchKiwiLocations(
+  term: string
+): Promise<Airport[] | null> {
+  try {
+    const response = await fetch(
+      `/api/travel/locations?term=${encodeURIComponent(term)}&locationTypes=airport&limit=10`
+    )
+    if (!response.ok) return null
+
+    const data: {
+      locations: Array<{
+        code: string
+        name: string
+        cityName?: string
+        countryName?: string
+      }>
+      source: string
+    } = await response.json()
+
+    if (data.source === "none" || data.locations.length === 0) {
+      return null
+    }
+
+    return data.locations.map((loc) => ({
+      code: loc.code,
+      name: loc.name,
+      city: loc.cityName || loc.name,
+      country: loc.countryName || "",
+    }))
+  } catch {
+    return null
+  }
+}
+
 export function AirportAutocomplete({
   value,
   onChange,
@@ -26,6 +64,7 @@ export function AirportAutocomplete({
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Sync display value with external value
   useEffect(() => {
@@ -43,14 +82,38 @@ export function AirportAutocomplete({
 
   const handleSearch = useCallback((searchQuery: string) => {
     setQuery(searchQuery)
-    if (searchQuery.length >= 1) {
-      const matches = searchAirports(searchQuery)
-      setResults(matches)
-      setIsOpen(matches.length > 0)
-      setHighlightedIndex(-1)
-    } else {
+
+    if (searchQuery.length < 1) {
       setResults([])
       setIsOpen(false)
+      return
+    }
+
+    // Show static results immediately for responsiveness
+    const staticMatches = searchAirports(searchQuery)
+    setResults(staticMatches)
+    setIsOpen(staticMatches.length > 0)
+    setHighlightedIndex(-1)
+
+    // Debounce the API call to Kiwi for live results
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+    }
+
+    if (searchQuery.length >= 2) {
+      debounceRef.current = setTimeout(async () => {
+        const kiwiResults = await fetchKiwiLocations(searchQuery)
+        if (kiwiResults && kiwiResults.length > 0) {
+          // Merge: Kiwi results first, then static results that aren't duplicates
+          const kiwiCodes = new Set(kiwiResults.map((r) => r.code))
+          const uniqueStatic = staticMatches.filter(
+            (a) => !kiwiCodes.has(a.code)
+          )
+          const merged = [...kiwiResults, ...uniqueStatic].slice(0, 10)
+          setResults(merged)
+          setIsOpen(merged.length > 0)
+        }
+      }, 300)
     }
   }, [])
 

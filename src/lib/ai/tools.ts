@@ -4,7 +4,7 @@ export const AI_TOOLS: Anthropic.Tool[] = [
   {
     name: "search_flights",
     description:
-      "Search for available flights between two airports. Returns a list of flight offers with pricing, schedules, and details. Use IATA airport codes (e.g., JFK, LAX, LHR).",
+      "Search for available flights between two airports. Searches across multiple providers (Amadeus, Duffel, and Kiwi.com) for real live flight data with pricing, schedules, and details. Use IATA airport codes (e.g., JFK, LAX, LHR).",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -124,7 +124,7 @@ export const AI_TOOLS: Anthropic.Tool[] = [
           properties: {
             provider: {
               type: "string",
-              enum: ["AMADEUS", "DUFFEL"],
+              enum: ["AMADEUS", "DUFFEL", "KIWI"],
               description: "Booking provider",
             },
             providerOfferId: {
