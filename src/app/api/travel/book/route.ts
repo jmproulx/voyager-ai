@@ -1,15 +1,22 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { createOrder as createDuffelOrder } from "@/lib/travel/duffel"
+import {
+  checkFlights as checkKiwiFlights,
+  saveBooking as saveKiwiBooking,
+  confirmPayment as confirmKiwiPayment,
+} from "@/lib/travel/kiwi"
 
 interface BookingRequestBody {
   offerId: string
-  provider: "AMADEUS" | "DUFFEL"
+  provider: "AMADEUS" | "DUFFEL" | "KIWI"
   tripId: string
   type: "FLIGHT" | "HOTEL"
   price: number
   currency: string
   details: Record<string, unknown>
+  bookingToken?: string
+  deepLink?: string
   passengerDetails?: Array<{
     id: string
     type: string
@@ -20,6 +27,7 @@ interface BookingRequestBody {
     email: string
     phoneNumber: string
     title: string
+    nationality?: string
   }>
 }
 
@@ -35,7 +43,18 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { offerId, provider, tripId, type, price, currency, details, passengerDetails } = body
+  const {
+    offerId,
+    provider,
+    tripId,
+    type,
+    price,
+    currency,
+    details,
+    bookingToken,
+    deepLink,
+    passengerDetails,
+  } = body
 
   // Validate required fields
   if (!offerId || !provider || !tripId || !type || !price) {
@@ -56,9 +75,57 @@ export async function POST(request: NextRequest) {
 
   try {
     let providerBookingId: string | null = null
+    let kiwiDeepLink: string | undefined = deepLink || undefined
 
     // Book through the appropriate provider
-    if (provider === "DUFFEL" && type === "FLIGHT" && passengerDetails) {
+    if (provider === "KIWI" && type === "FLIGHT" && bookingToken && passengerDetails) {
+      // Step 1: Check flight availability
+      const checkResult = await checkKiwiFlights({
+        bookingToken,
+        adults: passengerDetails.filter((p) => p.type === "adult").length || 1,
+        children: passengerDetails.filter((p) => p.type === "child").length,
+        infants: passengerDetails.filter((p) => p.type === "infant").length,
+        currency: currency || "USD",
+      })
+
+      if (checkResult.flights_invalid) {
+        return NextResponse.json(
+          { error: "Kiwi flights are no longer available. Please search again." },
+          { status: 410 }
+        )
+      }
+
+      // Step 2: Save booking
+      const kiwiPassengers = passengerDetails.map((p) => ({
+        name: p.givenName,
+        surname: p.familyName,
+        nationality: p.nationality || "US",
+        birthday: p.bornOn,
+        email: p.email,
+        phone: p.phoneNumber,
+        title: (p.title === "Mr" || p.title === "Ms" || p.title === "Mrs"
+          ? p.title
+          : "Mr") as "Mr" | "Ms" | "Mrs",
+      }))
+
+      const sessionId = checkResult.booking_token
+      const saveResult = await saveKiwiBooking({
+        bookingToken: checkResult.booking_token,
+        sessionId,
+        passengers: kiwiPassengers,
+      })
+
+      // Step 3: Confirm payment
+      const confirmation = await confirmKiwiPayment({
+        bookingId: saveResult.booking_id,
+        transactionId: saveResult.transaction_id,
+      })
+
+      providerBookingId = String(confirmation.booking_id)
+    } else if (provider === "KIWI" && type === "FLIGHT") {
+      // If no passenger details, store the booking token as reference
+      providerBookingId = offerId.replace("kiwi-", "")
+    } else if (provider === "DUFFEL" && type === "FLIGHT" && passengerDetails) {
       const duffelPassengers = passengerDetails.map((p) => ({
         id: p.id,
         type: p.type,
@@ -84,15 +151,28 @@ export async function POST(request: NextRequest) {
       providerBookingId = offerId.replace("amadeus-", "")
     }
 
+    // Build booking details, including Kiwi deep link if available
+    const bookingDetails = {
+      ...(details as Record<string, unknown>),
+      ...(kiwiDeepLink ? { kiwiDeepLink } : {}),
+    }
+
+    // Map provider string to Prisma BookingProvider enum
+    const providerEnum = provider === "AMADEUS"
+      ? "AMADEUS"
+      : provider === "KIWI"
+        ? "KIWI"
+        : "DUFFEL"
+
     // Create booking record in database
     const booking = await prisma.booking.create({
       data: {
         type: type === "FLIGHT" ? "FLIGHT" : "HOTEL",
         tripId,
         status: "CONFIRMED",
-        provider: provider === "AMADEUS" ? "AMADEUS" : "DUFFEL",
+        provider: providerEnum,
         providerBookingId,
-        details: details as unknown as import("@prisma/client").Prisma.InputJsonValue,
+        details: bookingDetails as unknown as import("@prisma/client").Prisma.InputJsonValue,
         price,
         currency,
         policyCompliant: true,

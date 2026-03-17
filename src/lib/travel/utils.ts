@@ -77,34 +77,40 @@ export function calculateStops(segments: FlightSegment[]): {
  */
 export function mergeAndDeduplicateOffers(
   amadeusOffers: FlightOffer[],
-  duffelOffers: FlightOffer[]
+  duffelOffers: FlightOffer[],
+  kiwiOffers: FlightOffer[] = []
 ): FlightOffer[] {
   const merged: FlightOffer[] = [...amadeusOffers]
 
-  for (const duffelOffer of duffelOffers) {
-    const duffelFlightNums = duffelOffer.segments
-      .map((s) => s.flightNumber)
-      .sort()
-      .join(",")
-
-    const isDuplicate = merged.some((existing) => {
-      const existingFlightNums = existing.segments
+  const addWithDedup = (offers: FlightOffer[]) => {
+    for (const offer of offers) {
+      const offerFlightNums = offer.segments
         .map((s) => s.flightNumber)
         .sort()
         .join(",")
 
-      if (duffelFlightNums !== existingFlightNums) return false
+      const isDuplicate = merged.some((existing) => {
+        const existingFlightNums = existing.segments
+          .map((s) => s.flightNumber)
+          .sort()
+          .join(",")
 
-      // Check if prices are within 5% of each other
-      const priceDiff = Math.abs(existing.totalPrice - duffelOffer.totalPrice)
-      const avgPrice = (existing.totalPrice + duffelOffer.totalPrice) / 2
-      return avgPrice > 0 && priceDiff / avgPrice < 0.05
-    })
+        if (offerFlightNums !== existingFlightNums) return false
 
-    if (!isDuplicate) {
-      merged.push(duffelOffer)
+        // Check if prices are within 5% of each other
+        const priceDiff = Math.abs(existing.totalPrice - offer.totalPrice)
+        const avgPrice = (existing.totalPrice + offer.totalPrice) / 2
+        return avgPrice > 0 && priceDiff / avgPrice < 0.05
+      })
+
+      if (!isDuplicate) {
+        merged.push(offer)
+      }
     }
   }
+
+  addWithDedup(duffelOffers)
+  addWithDedup(kiwiOffers)
 
   return merged
 }

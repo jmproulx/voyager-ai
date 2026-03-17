@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { searchFlights as searchAmadeusFlights } from "@/lib/travel/amadeus"
 import { createOfferRequest as searchDuffelFlights } from "@/lib/travel/duffel"
+import {
+  searchFlights as searchKiwiFlights,
+  isKiwiConfigured,
+} from "@/lib/travel/kiwi"
 import { mergeAndDeduplicateOffers } from "@/lib/travel/utils"
 import type { FlightOffer } from "@/types/travel"
 
@@ -54,8 +58,8 @@ export async function GET(request: NextRequest) {
     FIRST: "first",
   }
 
-  // Search both providers in parallel
-  const results = await Promise.allSettled([
+  // Build search promises — include Kiwi only if configured
+  const searchPromises: Array<Promise<FlightOffer[]>> = [
     // Amadeus search
     searchAmadeusFlights({
       originLocationCode: origin,
@@ -90,12 +94,33 @@ export async function GET(request: NextRequest) {
       })),
       cabin_class: duffelClassMap[cabinClass] || "economy",
     }),
-  ])
+  ]
+
+  // Add Kiwi search if API key is configured
+  const kiwiEnabled = isKiwiConfigured()
+  if (kiwiEnabled) {
+    searchPromises.push(
+      searchKiwiFlights({
+        origin,
+        destination,
+        departureDate,
+        returnDate: returnDate || undefined,
+        adults: passengers,
+        cabinClass: cabinClass || "ECONOMY",
+        maxResults: 30,
+      })
+    )
+  }
+
+  // Search all providers in parallel
+  const results = await Promise.allSettled(searchPromises)
 
   const amadeusOffers: FlightOffer[] =
     results[0].status === "fulfilled" ? results[0].value : []
   const duffelOffers: FlightOffer[] =
     results[1].status === "fulfilled" ? results[1].value : []
+  const kiwiOffers: FlightOffer[] =
+    kiwiEnabled && results[2]?.status === "fulfilled" ? results[2].value : []
 
   // Collect errors for debugging (but still return any successful results)
   const errors: string[] = []
@@ -105,9 +130,16 @@ export async function GET(request: NextRequest) {
   if (results[1].status === "rejected") {
     errors.push(`Duffel: ${results[1].reason instanceof Error ? results[1].reason.message : "Unknown error"}`)
   }
+  if (kiwiEnabled && results[2]?.status === "rejected") {
+    errors.push(`Kiwi: ${results[2].reason instanceof Error ? results[2].reason.message : "Unknown error"}`)
+  }
 
   // Merge and deduplicate
-  const mergedOffers = mergeAndDeduplicateOffers(amadeusOffers, duffelOffers)
+  const mergedOffers = mergeAndDeduplicateOffers(
+    amadeusOffers,
+    duffelOffers,
+    kiwiOffers
+  )
 
   // Sort by price (default)
   mergedOffers.sort((a, b) => a.totalPrice - b.totalPrice)
@@ -117,6 +149,7 @@ export async function GET(request: NextRequest) {
     meta: {
       amadeusCount: amadeusOffers.length,
       duffelCount: duffelOffers.length,
+      kiwiCount: kiwiOffers.length,
       totalCount: mergedOffers.length,
       errors: errors.length > 0 ? errors : undefined,
     },

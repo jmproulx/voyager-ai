@@ -13,7 +13,7 @@ export interface FlightSegment {
 
 export interface FlightOffer {
   id: string
-  provider: "AMADEUS" | "DUFFEL"
+  provider: "AMADEUS" | "DUFFEL" | "KIWI"
   providerOfferId: string
   segments: FlightSegment[]
   totalPrice: number
@@ -25,6 +25,8 @@ export interface FlightOffer {
   carbonKg?: number
   policyCompliant?: boolean
   policyViolationReason?: string
+  deepLink?: string
+  bookingToken?: string
 }
 
 export interface HotelOffer {
@@ -78,7 +80,7 @@ export interface HotelSearchParams {
 
 export interface BookingDetails {
   type: "FLIGHT" | "HOTEL" | "CAR_RENTAL"
-  provider: "AMADEUS" | "DUFFEL"
+  provider: "AMADEUS" | "DUFFEL" | "KIWI"
   providerOfferId: string
   price: number
   currency: string
